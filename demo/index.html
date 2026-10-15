@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Samsung Washer Card · Demo</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; color: #e8ecf6;
+    font-family: -apple-system, 'SF Pro Text', Inter, system-ui, sans-serif;
+    background:
+      radial-gradient(90% 70% at 20% 0%, #4d5f7d 0%, transparent 60%),
+      radial-gradient(80% 80% at 90% 100%, #5e4c3f 0%, transparent 60%),
+      #232937;
+    display: flex; flex-wrap: wrap; gap: 28px; justify-content: center; align-items: flex-start; padding: 36px 16px;
+  }
+  .col { width: 430px; max-width: 100%; }
+  .sim { width: 330px; max-width: 100%; background: rgba(10,14,26,.6); border: 1px solid rgba(255,255,255,.09); border-radius: 22px; padding: 18px; backdrop-filter: blur(14px); }
+  h1 { font-size: 15px; margin: 0 0 4px; font-weight: 650; }
+  p.hint { margin: 0 0 14px; font-size: 12px; color: rgba(222,230,247,.58); line-height: 1.45; }
+  .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: rgba(222,230,247,.45); margin: 14px 0 7px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  button { font: inherit; font-size: 12px; font-weight: 600; color: #e8ecf6; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); border-radius: 10px; padding: 7px 10px; cursor: pointer; }
+  button:hover { background: rgba(255,255,255,.13); }
+  button.sel { background: #3d8bff; border-color: #6aa6ff; }
+  pre { margin: 0; font-size: 11px; line-height: 1.5; color: rgba(222,230,247,.7); background: rgba(0,0,0,.25); border-radius: 12px; padding: 10px; white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+  <div class="col"><samsung-washer-card id="card"></samsung-washer-card></div>
+
+  <div class="sim">
+    <h1>Simulator</h1>
+    <p class="hint">A fake Home Assistant <code>hass</code> object mimics the SmartThings integration's entities and plays a sped-up cycle. Jump between phases, pause, or open the door. Drag the 3D view to turn the machine. Add <code>?lang=tr</code> to the URL for Turkish.</p>
+
+    <div class="lbl">Program</div>
+    <div class="btns">
+      <button id="start">▶ Wash + Dry</button>
+      <button id="startw">▶ Wash only</button>
+      <button id="pause">⏸ Pause</button>
+    </div>
+
+    <div class="lbl">Jump to phase</div>
+    <div class="btns" id="jump"></div>
+
+    <div class="lbl">Speed</div>
+    <div class="btns" id="speed"></div>
+
+    <div class="lbl">Device</div>
+    <div class="btns">
+      <button id="power">Power on/off</button>
+      <button id="door">Door open/close</button>
+      <button id="color">Colour</button>
+    </div>
+
+    <div class="lbl">Entities</div>
+    <pre id="states"></pre>
+  </div>
+
+<script src="../dist/samsung-washer-card.js"></script>
+<script>
+  // ---- fake SmartThings washer-dryer ----
+  const ID = 'washer';
+  const PROGRAMS = {
+    wd: { course: 'wash_dry', steps: [['weight_sensing', 1], ['wash', 32], ['rinse', 16], ['spin', 9], ['drying', 58], ['cooling', 6]] },
+    w:  { course: 'cotton',   steps: [['weight_sensing', 1], ['wash', 38], ['rinse', 18], ['spin', 10]] },
+  };
+  const sim = {
+    power: 'on', machine: 'stop', job: 'none', door: false, program: null, step: 0, stepLeft: 0,
+    course: 'wash_dry', speed: 60, energy: 241.36, watts: 0, color: 'white',
+  };
+  const now = () => Date.now();
+  const remainingMin = () => {
+    if (!sim.program) return 0;
+    const st = PROGRAMS[sim.program].steps;
+    let m = sim.stepLeft;
+    for (let i = sim.step + 1; i < st.length; i++) m += st[i][1];
+    return m;
+  };
+  const WATTS = { weight_sensing: 60, wash: 2000, rinse: 180, spin: 420, drying: 1800, cooling: 90 };
+
+  function states() {
+    const t = (id, state, attrs = {}) => ({ entity_id: id, state: String(state), attributes: attrs, last_changed: new Date().toISOString() });
+    const comp = sim.program ? new Date(now() + remainingMin() * 60 * 1000) : new Date(now());
+    return {
+      [`switch.${ID}`]: t(`switch.${ID}`, sim.power, { friendly_name: 'Washer' }),
+      [`sensor.${ID}_machine_state`]: t(`sensor.${ID}_machine_state`, sim.power === 'off' ? 'stop' : sim.machine, { device_class: 'enum', options: ['pause', 'run', 'stop'] }),
+      [`sensor.${ID}_job_state`]: t(`sensor.${ID}_job_state`, sim.power === 'off' ? 'none' : sim.job, { device_class: 'enum' }),
+      [`sensor.${ID}_completion_time`]: t(`sensor.${ID}_completion_time`, comp.toISOString(), { device_class: 'timestamp' }),
+      [`sensor.${ID}_energy`]: t(`sensor.${ID}_energy`, sim.energy.toFixed(2), { unit_of_measurement: 'kWh', device_class: 'energy' }),
+      [`sensor.${ID}_power`]: t(`sensor.${ID}_power`, sim.watts, { unit_of_measurement: 'W', device_class: 'power' }),
+      [`binary_sensor.${ID}_door`]: t(`binary_sensor.${ID}_door`, sim.door ? 'on' : 'off', { device_class: 'door' }),
+      [`select.${ID}_washer_mode`]: t(`select.${ID}_washer_mode`, sim.course),
+    };
+  }
+
+  let card = document.getElementById('card');
+  let cfg = { type: 'custom:samsung-washer-card', entity: `switch.${ID}`, color: sim.color, bloom: new URLSearchParams(location.search).get('bloom') !== '0', language: new URLSearchParams(location.search).get('lang') || 'en' };
+  card.setConfig(cfg);
+
+  // HA hands cards a fresh hass object on every state change; do the same.
+  function push() {
+    const st = states();
+    card.hass = {
+      states: st, language: 'en', themes: { darkMode: true },
+      callService(domain, service) {
+        if (domain === 'switch') { sim.power = service === 'turn_on' ? 'on' : 'off'; if (sim.power === 'off') stop(); push(); }
+        return Promise.resolve();
+      },
+    };
+    const pick = ['job_state', 'machine_state', 'completion_time', 'door'];
+    document.getElementById('states').textContent = Object.values(st)
+      .filter((s) => pick.some((p) => s.entity_id.includes(p)) || s.entity_id.startsWith('switch'))
+      .map((s) => `${s.entity_id}: ${s.state}`).join('\n');
+  }
+
+  function start(prog) {
+    sim.power = 'on'; sim.door = false; sim.program = prog; sim.step = 0; sim.course = PROGRAMS[prog].course;
+    sim.stepLeft = PROGRAMS[prog].steps[0][1]; sim.machine = 'run'; sim.job = PROGRAMS[prog].steps[0][0];
+    push();
+  }
+  function stop() { sim.program = null; sim.machine = 'stop'; sim.job = 'none'; sim.watts = 0; }
+  function finish() { sim.program = null; sim.machine = 'stop'; sim.job = 'finish'; sim.watts = 0; }
+
+  function jumpTo(job) {
+    if (job === 'finish') { finish(); push(); return; }
+    if (!sim.program || !PROGRAMS[sim.program].steps.some((s) => s[0] === job)) start('wd');
+    const st = PROGRAMS[sim.program].steps;
+    sim.step = st.findIndex((s) => s[0] === job);
+    if (sim.step < 0) { sim.step = 0; job = st[0][0]; }
+    sim.stepLeft = st[sim.step][1]; sim.job = job; sim.machine = 'run'; sim.door = false;
+    push();
+  }
+
+  // Simulated clock: `speed` simulated minutes per real minute.
+  let last = performance.now();
+  setInterval(() => {
+    const t = performance.now();
+    const dtMin = ((t - last) / 60000) * sim.speed;
+    last = t;
+    if (sim.program && sim.machine === 'run' && sim.power === 'on') {
+      sim.stepLeft -= dtMin;
+      sim.watts = Math.round(WATTS[sim.job] * (0.85 + Math.random() * 0.3));
+      sim.energy += (sim.watts / 1000) * (dtMin / 60);
+      while (sim.program && sim.stepLeft <= 0) {
+        const st = PROGRAMS[sim.program].steps;
+        sim.step++;
+        if (sim.step >= st.length) { finish(); setTimeout(() => { sim.door = true; push(); }, 6000); break; }
+        sim.stepLeft += st[sim.step][1]; sim.job = st[sim.step][0];
+      }
+    } else sim.watts = 0;
+    push();
+  }, 250);
+
+  // ---- controls ----
+  const $ = (id) => document.getElementById(id);
+  $('start').onclick = () => start('wd');
+  $('startw').onclick = () => start('w');
+  $('pause').onclick = () => { if (sim.program) { sim.machine = sim.machine === 'pause' ? 'run' : 'pause'; push(); } };
+  $('power').onclick = () => { sim.power = sim.power === 'on' ? 'off' : 'on'; if (sim.power === 'off') stop(); push(); };
+  $('door').onclick = () => { sim.door = !sim.door; if (sim.door && sim.program) sim.machine = 'pause'; push(); };
+  const colors = ['white', 'black', 'silver', 'beige'];
+  $('color').onclick = () => {
+    sim.color = colors[(colors.indexOf(sim.color) + 1) % colors.length];
+    // Body colour is a config option: rebuild the card the way HA does after a YAML edit.
+    cfg = { ...cfg, color: sim.color };
+    const fresh = document.createElement('samsung-washer-card');
+    fresh.setConfig(cfg);
+    card.replaceWith(fresh);
+    card = fresh;
+    push();
+  };
+
+  const JUMPS = [['weight_sensing', 'Weighing'], ['wash', 'Wash'], ['rinse', 'Rinse'], ['spin', 'Spin'], ['drying', 'Dry'], ['cooling', 'Cool'], ['finish', 'Done']];
+  for (const [job, label] of JUMPS) {
+    const b = document.createElement('button'); b.textContent = label; b.onclick = () => jumpTo(job); $('jump').append(b);
+  }
+  for (const s of [1, 30, 60, 240]) {
+    const b = document.createElement('button'); b.textContent = `${s}×`; b.dataset.s = s;
+    b.onclick = () => { sim.speed = s; document.querySelectorAll('#speed button').forEach((x) => x.classList.toggle('sel', +x.dataset.s === s)); };
+    if (s === sim.speed) b.classList.add('sel');
+    $('speed').append(b);
+  }
+
+  // Start mid-wash so the first look has water and bubbles.
+  const q = new URLSearchParams(location.search);
+  if (q.get('speed')) sim.speed = +q.get('speed');
+  start('wd');
+  if (q.get('phase')) jumpTo(q.get('phase'));
+  else jumpTo('wash');
+  if (q.get('door')) { sim.door = true; push(); }
+</script>
+</body>
+</html>

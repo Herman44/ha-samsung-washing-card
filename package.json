@@ -1,0 +1,18 @@
+{
+  "name": "ha-samsung-washing-card",
+  "version": "1.0.0",
+  "description": "Animated 3D Samsung washer / washer-dryer card for Home Assistant (SmartThings integration)",
+  "private": true,
+  "license": "MIT",
+  "repository": "github:cryptooth/ha-samsung-washing-card",
+  "scripts": {
+    "build": "esbuild src/samsung-washer-card.js --bundle --minify --format=iife --target=es2020 --legal-comments=eof --outfile=dist/samsung-washer-card.js",
+    "watch": "npm run build -- --watch"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}
